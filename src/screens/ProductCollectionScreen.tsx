@@ -48,12 +48,13 @@ interface ShopifyResponse {
 const PRODUCTS_PER_PAGE = 20;
 
 const PRODUCTS_QUERY = gql`
-  query GetProducts($first: Int!, $after: String) {
-    products(first: $first, after: $after) {
+  query GetProducts($first: Int!, $after: String, $query: String) {
+    products(first: $first, after: $after, query: $query) {
       edges {
         node {
           id
           title
+          tags
           images(first: 1) {
             edges {
               node {
@@ -112,14 +113,32 @@ export default function ProductCollectionScreen() {
     queryKey: ['products', endCursor],
     queryFn: async (): Promise<ShopifyResponse> => {
       try {
+        // First try with the tag filter
         const response = await shopifyClient.request(PRODUCTS_QUERY, {
           first: PRODUCTS_PER_PAGE,
           after: endCursor,
+          query: 'tag:online_stock:available'
         }) as ShopifyResponse;
+
+        // If no products are found, try without the filter
+        if (response.products.edges.length === 0) {
+          return await shopifyClient.request(PRODUCTS_QUERY, {
+            first: PRODUCTS_PER_PAGE,
+            after: endCursor
+          }) as ShopifyResponse;
+        }
+
         return response;
       } catch (error) {
-        console.error('Error fetching products:', error);
-        throw new Error('Failed to load products. Please try again.');
+        // If there's an error with the tag filter, try without it
+        try {
+          return await shopifyClient.request(PRODUCTS_QUERY, {
+            first: PRODUCTS_PER_PAGE,
+            after: endCursor
+          }) as ShopifyResponse;
+        } catch (fallbackError) {
+          throw new Error('Failed to load products. Please try again.');
+        }
       }
     },
     retry: 2,
